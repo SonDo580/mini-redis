@@ -7,13 +7,22 @@ import (
 	"strconv"
 )
 
-// RESP prefix bytes for different types
+// RESP prefix bytes for different data types
 const (
-	STRING  = '+' // simple string
-	ERROR   = '-'
-	INTEGER = ':'
-	BULK    = '$' // bulk string
-	ARRAY   = '*'
+	RespPrefixString  = '+' // simple string
+	RespPrefixError   = '-'
+	RespPrefixInteger = ':'
+	RespPrefixBulk    = '$' // bulk string
+	RespPrefixArray   = '*'
+)
+
+// Data type for Value
+const (
+	RespTypeString = "string"
+	RespTypeBulk   = "bulk"
+	RespTypeArray  = "array"
+	RespTypeError  = "error"
+	RespTypeNull   = "null"
 )
 
 // Represents a deserialized RESP value
@@ -43,9 +52,9 @@ func (r *Resp) Read() (Value, error) {
 	}
 
 	switch _type {
-	case ARRAY:
+	case RespPrefixArray:
 		return r.readArray()
-	case BULK:
+	case RespPrefixBulk:
 		return r.readBulk()
 	default:
 		fmt.Printf("Unknown type: %v", string(_type))
@@ -158,15 +167,15 @@ func (w *Writer) Write(v Value) error {
 // Serialize RESP value
 func (v Value) Marshal() []byte {
 	switch v.typ {
-	case "array":
+	case RespTypeArray:
 		return v.marshalArray()
-	case "bulk":
+	case RespTypeBulk:
 		return v.marshalBulk()
-	case "string":
+	case RespTypeString:
 		return v.marshalString()
-	case "null":
+	case RespTypeNull:
 		return v.marshalNull()
-	case "error":
+	case RespTypeError:
 		return v.marshalError()
 	default:
 		return []byte{}
@@ -176,7 +185,7 @@ func (v Value) Marshal() []byte {
 // Serialize simple string: "+<value>\r\n"
 func (v Value) marshalString() []byte {
 	var bytes []byte
-	bytes = append(bytes, STRING)
+	bytes = append(bytes, RespPrefixString)
 	bytes = append(bytes, v.str...)
 	bytes = append(bytes, '\r', '\n')
 	return bytes
@@ -185,7 +194,7 @@ func (v Value) marshalString() []byte {
 // Serialize bulk string: "$<len>\r\n<value>\r\n"
 func (v Value) marshalBulk() []byte {
 	var bytes []byte
-	bytes = append(bytes, BULK)
+	bytes = append(bytes, RespPrefixBulk)
 	bytes = append(bytes, strconv.Itoa(len(v.bulk))...)
 	bytes = append(bytes, '\r', '\n')
 	bytes = append(bytes, v.bulk...)
@@ -197,7 +206,7 @@ func (v Value) marshalBulk() []byte {
 func (v Value) marshalArray() []byte {
 	length := len(v.array)
 	var bytes []byte
-	bytes = append(bytes, ARRAY)
+	bytes = append(bytes, RespPrefixArray)
 	bytes = append(bytes, strconv.Itoa(length)...)
 	bytes = append(bytes, '\r', '\n')
 
@@ -211,7 +220,7 @@ func (v Value) marshalArray() []byte {
 // Serialize error: "-<error>\r\n"
 func (v Value) marshalError() []byte {
 	var bytes []byte
-	bytes = append(bytes, ERROR)
+	bytes = append(bytes, RespPrefixError)
 	bytes = append(bytes, v.str...)
 	bytes = append(bytes, '\r', '\n')
 	return bytes
