@@ -25,6 +25,7 @@ func main() {
 	defer conn.Close()
 
 	for {
+		// Read message from client
 		resp := NewResp(conn)
 		value, err := resp.Read()
 		if err != nil {
@@ -35,6 +36,7 @@ func main() {
 		fmt.Println(value)
 
 		// Respond to client
-		conn.Write([]byte("+PONG\r\n"))
+		writer := NewWriter(conn)
+		writer.Write(Value{typ: "string", str: "OK"})
 	}
 }

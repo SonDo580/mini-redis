@@ -18,24 +18,42 @@ const (
 
 // Represents a deserialized RESP value
 type Value struct {
-	typ   string  // data type
-	str   string  // simple string value
-	num   int     // integer value
-	bulk  string  // bulk string value
-	array []Value // array values
+	typ   string
+	str   string
+	num   int
+	bulk  string
+	array []Value
 }
 
-// Wraps a buffered reader for parsing RESP
+// ========== READER ==========
+// ============================
 type Resp struct {
 	reader *bufio.Reader
 }
 
-// Creates a RESP parser from any io.Reader
 func NewResp(reader io.Reader) *Resp {
 	return &Resp{reader: bufio.NewReader(reader)}
 }
 
-// Reads bytes until CRLF, returns the line without CRLF
+// Read from reader and deserialize RESP value
+func (r *Resp) Read() (Value, error) {
+	_type, err := r.reader.ReadByte()
+	if err != nil {
+		return Value{}, err
+	}
+
+	switch _type {
+	case ARRAY:
+		return r.readArray()
+	case BULK:
+		return r.readBulk()
+	default:
+		fmt.Printf("Unknown type: %v", string(_type))
+		return Value{}, nil
+	}
+}
+
+// Read bytes until CRLF. Return the line without CRLF
 func (r *Resp) readLine() (line []byte, n int, err error) {
 	for {
 		b, err := r.reader.ReadByte()
@@ -56,7 +74,7 @@ func (r *Resp) readLine() (line []byte, n int, err error) {
 	return line, n, nil
 }
 
-// Parses an integer
+// Parse an integer
 func (r *Resp) readInteger() (x int, n int, err error) {
 	line, n, err := r.readLine()
 	if err != nil {
@@ -71,25 +89,7 @@ func (r *Resp) readInteger() (x int, n int, err error) {
 	return int(i64), n, nil
 }
 
-// Reads 1 RESP value, dispatches based on type prefix
-func (r *Resp) Read() (Value, error) {
-	_type, err := r.reader.ReadByte()
-	if err != nil {
-		return Value{}, err
-	}
-
-	switch _type {
-	case ARRAY:
-		return r.readArray()
-	case BULK:
-		return r.readBulk()
-	default:
-		fmt.Printf("Unknown type: %v", string(_type))
-		return Value{}, nil
-	}
-}
-
-// Parses an array: "*<len>\r\n<value...>""
+// Parse an array: "*<len>\r\n<value...>"
 func (r *Resp) readArray() (Value, error) {
 	v := Value{}
 	v.typ = "array"
@@ -116,7 +116,7 @@ func (r *Resp) readArray() (Value, error) {
 	return v, nil
 }
 
-// Parses a bulk string: "$<len>\r\n<value>\r\n"
+// Parse a bulk string: "$<len>\r\n<value>\r\n"
 func (r *Resp) readBulk() (Value, error) {
 	v := Value{}
 	v.typ = "bulk"
@@ -136,4 +136,88 @@ func (r *Resp) readBulk() (Value, error) {
 	r.readLine()
 
 	return v, nil
+}
+
+// ========== WRITER ==========
+// ============================
+type Writer struct {
+	writer io.Writer
+}
+
+func NewWriter(w io.Writer) *Writer {
+	return &Writer{writer: w}
+}
+
+// Serialize RESP value and write to writer
+func (w *Writer) Write(v Value) error {
+	var bytes = v.Marshal()
+	_, err := w.writer.Write(bytes)
+	return err
+}
+
+// Serialize RESP value
+func (v Value) Marshal() []byte {
+	switch v.typ {
+	case "array":
+		return v.marshalArray()
+	case "bulk":
+		return v.marshalBulk()
+	case "string":
+		return v.marshalString()
+	case "null":
+		return v.marshalNull()
+	case "error":
+		return v.marshalError()
+	default:
+		return []byte{}
+	}
+}
+
+// Serialize simple string: "+<value>\r\n"
+func (v Value) marshalString() []byte {
+	var bytes []byte
+	bytes = append(bytes, STRING)
+	bytes = append(bytes, v.str...)
+	bytes = append(bytes, '\r', '\n')
+	return bytes
+}
+
+// Serialize bulk string: "$<len>\r\n<value>\r\n"
+func (v Value) marshalBulk() []byte {
+	var bytes []byte
+	bytes = append(bytes, BULK)
+	bytes = append(bytes, strconv.Itoa(len(v.bulk))...)
+	bytes = append(bytes, '\r', '\n')
+	bytes = append(bytes, v.bulk...)
+	bytes = append(bytes, '\r', '\n')
+	return bytes
+}
+
+// Serialize array: "*<len>\r\n<value...>"
+func (v Value) marshalArray() []byte {
+	length := len(v.array)
+	var bytes []byte
+	bytes = append(bytes, ARRAY)
+	bytes = append(bytes, strconv.Itoa(length)...)
+	bytes = append(bytes, '\r', '\n')
+
+	for i := range length {
+		bytes = append(bytes, v.array[i].Marshal()...)
+	}
+
+	return bytes
+}
+
+// Serialize error: "-<error>\r\n"
+func (v Value) marshalError() []byte {
+	var bytes []byte
+	bytes = append(bytes, ERROR)
+	bytes = append(bytes, v.str...)
+	bytes = append(bytes, '\r', '\n')
+	return bytes
+}
+
+// Serialize null (data not found)
+func (v Value) marshalNull() []byte {
+	return []byte("$-1\r\n")
 }
