@@ -2,50 +2,39 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"net"
-	"os"
 )
 
 func main() {
-	// Start a TCP listener on Redis default port)
-	listener, err := net.Listen("tcp", ":6379")
+	// Create new server
+	const PORT string = ":6379"
+	listener, err := net.Listen("tcp", PORT)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+	fmt.Println("Listening on port ", PORT)
 
-	// Accept a single client connection
+	// Listen for connections
 	conn, err := listener.Accept()
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	// Close connection once finished
 	defer conn.Close()
 
-	// Infinite loop: receive commands from client and respond
 	for {
-		buffer := make([]byte, 1024)
-
-		// Read message from client
-		_, err = conn.Read(buffer)
+		resp := NewResp(conn)
+		value, err := resp.Read()
 		if err != nil {
-			// Client disconnected normally
-			if err == io.EOF {
-				break
-			}
-
-			fmt.Println("Error reading from client: ", err.Error())
-			os.Exit(1)
+			fmt.Println(err)
+			return
 		}
+
+		fmt.Println(value)
 
 		// Respond to client
-		_, err = conn.Write([]byte("+PONG\r\n"))
-		if err != nil {
-			fmt.Println("Error writing to client: ", err.Error())
-			os.Exit(1)
-		}
+		conn.Write([]byte("+PONG\r\n"))
 	}
 }
