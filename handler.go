@@ -1,6 +1,9 @@
 package main
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 const (
 	CmdPing = "PING"
@@ -21,7 +24,21 @@ var Handlers = map[string]func([]Value) Value{
 	CmdHGet: hget,
 }
 
+// ==== Helpers =====
+
+func checkArgsCount(command string, args []Value, expected int) *Value {
+	if len(args) == expected {
+		return nil
+	}
+
+	return &Value{
+		typ: RespTypeError,
+		str: fmt.Sprintf("ERR wrong number of arguments for '%s' command", command),
+	}
+}
+
 // ===== PING =====
+
 func ping(args []Value) Value {
 	reply := "PONG"
 	if len(args) > 0 {
@@ -31,20 +48,24 @@ func ping(args []Value) Value {
 }
 
 // ===== ECHO =====
+
 func echo(args []Value) Value {
-	if len(args) != 1 {
-		return Value{typ: RespTypeError, str: "ERR wrong number of arguments for 'echo' command"}
+	err_val := checkArgsCount(CmdEcho, args, 1)
+	if err_val != nil {
+		return *err_val
 	}
 	return Value{typ: RespTypeBulk, bulk: args[0].bulk}
 }
 
 // ===== SET & GET =====
+
 var SETs = map[string]string{}
 var SETsMu = sync.RWMutex{}
 
 func set(args []Value) Value {
-	if len(args) != 2 {
-		return Value{typ: RespTypeError, str: "ERR wrong number of arguments for 'set' command"}
+	err_val := checkArgsCount(CmdSet, args, 2)
+	if err_val != nil {
+		return *err_val
 	}
 
 	key := args[0].bulk
@@ -59,8 +80,9 @@ func set(args []Value) Value {
 }
 
 func get(args []Value) Value {
-	if len(args) != 1 {
-		return Value{typ: RespTypeError, str: "ERR wrong number of arguments for 'get' command"}
+	err_val := checkArgsCount(CmdGet, args, 1)
+	if err_val != nil {
+		return *err_val
 	}
 
 	key := args[0].bulk
@@ -78,12 +100,14 @@ func get(args []Value) Value {
 }
 
 // ===== HSET & HGET =====
+
 var HSETs = map[string]map[string]string{}
 var HSETsMu = sync.RWMutex{}
 
 func hset(args []Value) Value {
-	if len(args) != 3 {
-		return Value{typ: RespTypeError, str: "ERR wrong number of arguments for 'hset' command"}
+	err_val := checkArgsCount(CmdHSet, args, 3)
+	if err_val != nil {
+		return *err_val
 	}
 
 	hash := args[0].bulk
@@ -101,8 +125,9 @@ func hset(args []Value) Value {
 }
 
 func hget(args []Value) Value {
-	if len(args) != 2 {
-		return Value{typ: RespTypeError, str: "ERR wrong number of arguments for 'hget' command"}
+	err_val := checkArgsCount(CmdHGet, args, 2)
+	if err_val != nil {
+		return *err_val
 	}
 
 	hash := args[0].bulk
