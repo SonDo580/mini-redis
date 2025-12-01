@@ -29,15 +29,30 @@ var Handlers = map[string]func([]Value) Value{
 
 // ==== Helpers =====
 
-func checkArgsCount(command string, args []Value, expected int) *Value {
-	if len(args) == expected {
-		return nil
-	}
+func okVal() Value {
+	return Value{typ: RespTypeString, str: "OK"}
+}
 
-	return &Value{
-		typ: RespTypeError,
-		str: fmt.Sprintf("ERR wrong number of arguments for '%s' command", command),
-	}
+func nullVal() Value {
+	return Value{typ: RespTypeNull}
+}
+
+func errVal(str string) Value {
+	return Value{typ: RespTypeError, str: str}
+}
+
+func argsCountErrVal(command string) Value {
+	return errVal(
+		fmt.Sprintf("ERR wrong number of arguments for '%s' command", command),
+	)
+}
+
+func syntaxErrVal() Value {
+	return errVal("ERR syntax error")
+}
+
+func intErrVal() Value {
+	return errVal("ERR value is not an integer or out of range")
 }
 
 // ===== PING =====
@@ -53,9 +68,8 @@ func ping(args []Value) Value {
 // ===== ECHO =====
 
 func echo(args []Value) Value {
-	err_val := checkArgsCount(CmdEcho, args, 1)
-	if err_val != nil {
-		return *err_val
+	if len(args) != 1 {
+		return argsCountErrVal(CmdEcho)
 	}
 	return Value{typ: RespTypeBulk, bulk: args[0].bulk}
 }
@@ -65,27 +79,23 @@ func echo(args []Value) Value {
 var SETs = map[string]string{}
 var SETsMu = sync.RWMutex{}
 
-// Note:
+// Side note:
 // - Write lock: Allow 1 writer, block readers and other writers
 // - Read lock: Allow multiple readers, block writers
 
-// Map SET key -> Unix timestamp in ms
+// Stores expiration time (Unix ms) for keys in SETs
 var SETsExpirations = map[string]int64{}
 var SETsExpirationsMu = sync.RWMutex{}
 
 func set(args []Value) Value {
 	if len(args) < 2 {
-		return Value{
-			typ: RespTypeError,
-			str: "ERR wrong number of arguments for 'SET' command",
-		}
+		return argsCountErrVal(CmdSet)
 	}
 
 	key := args[0].bulk
 	value := args[1].bulk
 
-	// Default: no expiration
-	var expiresAtMs int64 = 0
+	var expiresAtMs int64 = 0 // default: no expiration
 
 	// Parse optional arguments
 	for i := 2; i < len(args); i++ {
@@ -93,32 +103,33 @@ func set(args []Value) Value {
 
 		switch option {
 		case "PX":
-			// Handle PX milliseconds ()
 			if i+1 > len(args) {
-				return Value{
-					typ: RespTypeError,
-					str: "ERR SET PX requires an argument",
-				}
+				return syntaxErrVal()
 			}
-
 			ms, err := strconv.ParseInt(args[i+1].bulk, 10, 64)
 			if err != nil || ms <= 0 {
-				return Value{
-					typ: RespTypeError,
-					str: "ERR SET PX value must be a positive integer",
-				}
+				return intErrVal()
 			}
-
 			expiresAtMs = time.Now().UnixMilli() + ms
-			i++ // skip the value argument
-		default:
-			return Value{
-				typ: RespTypeError,
-				str: "ERR unknown option '%s' for 'SET' command",
+			i++
+
+		case "EX":
+			if i+1 > len(args) {
+				return syntaxErrVal()
 			}
+			seconds, err := strconv.ParseInt(args[i+1].bulk, 10, 64)
+			if err != nil || seconds <= 0 {
+				return intErrVal()
+			}
+			expiresAtMs = time.Now().UnixMilli() + seconds*1000
+			i++
+
+		default:
+			return syntaxErrVal()
 		}
 	}
 
+	// Set value
 	SETsMu.Lock()
 	SETs[key] = value
 	SETsMu.Unlock()
@@ -130,18 +141,16 @@ func set(args []Value) Value {
 		SETsExpirationsMu.Unlock()
 	}
 
-	return Value{typ: RespTypeString, str: "OK"}
+	return okVal()
 }
 
 func get(args []Value) Value {
-	err_val := checkArgsCount(CmdGet, args, 1)
-	if err_val != nil {
-		return *err_val
+	if len(args) != 1 {
+		return argsCountErrVal(CmdGet)
 	}
 
 	key := args[0].bulk
 
-	// Check if the key has expired
 	SETsExpirationsMu.RLock()
 	expiresAtMs, ok := SETsExpirations[key]
 	SETsExpirationsMu.RUnlock()
@@ -156,7 +165,7 @@ func get(args []Value) Value {
 		delete(SETsExpirations, key)
 		SETsExpirationsMu.Unlock()
 
-		return Value{typ: RespTypeNull}
+		return nullVal()
 	}
 
 	// Read value
@@ -165,7 +174,7 @@ func get(args []Value) Value {
 	SETsMu.RUnlock()
 
 	if !ok {
-		return Value{typ: RespTypeNull}
+		return nullVal()
 	}
 
 	return Value{typ: RespTypeBulk, bulk: value}
@@ -177,9 +186,8 @@ var HSETs = map[string]map[string]string{}
 var HSETsMu = sync.RWMutex{}
 
 func hset(args []Value) Value {
-	err_val := checkArgsCount(CmdHSet, args, 3)
-	if err_val != nil {
-		return *err_val
+	if len(args) != 3 {
+		return argsCountErrVal(CmdHSet)
 	}
 
 	hash := args[0].bulk
@@ -193,13 +201,12 @@ func hset(args []Value) Value {
 	HSETs[hash][key] = value
 	HSETsMu.Unlock()
 
-	return Value{typ: RespTypeString, str: "OK"}
+	return okVal()
 }
 
 func hget(args []Value) Value {
-	err_val := checkArgsCount(CmdHGet, args, 2)
-	if err_val != nil {
-		return *err_val
+	if len(args) != 2 {
+		return argsCountErrVal(CmdHGet)
 	}
 
 	hash := args[0].bulk
@@ -210,7 +217,7 @@ func hget(args []Value) Value {
 	HSETsMu.RUnlock()
 
 	if !ok {
-		return Value{typ: RespTypeNull}
+		return nullVal()
 	}
 
 	return Value{typ: RespTypeBulk, bulk: value}
