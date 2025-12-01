@@ -9,22 +9,24 @@ import (
 )
 
 const (
-	CmdPing = "PING"
-	CmdEcho = "ECHO"
-	CmdSet  = "SET"
-	CmdGet  = "GET"
-	CmdHSet = "HSET"
-	CmdHGet = "HGET"
+	CmdPing    = "PING"
+	CmdEcho    = "ECHO"
+	CmdSet     = "SET"
+	CmdGet     = "GET"
+	CmdHSet    = "HSET"
+	CmdHGet    = "HGET"
+	CmdHGetAll = "HGETALL"
 )
 
 // Map commands to handlers
 var Handlers = map[string]func([]Value) Value{
-	CmdPing: ping,
-	CmdEcho: echo,
-	CmdSet:  set,
-	CmdGet:  get,
-	CmdHSet: hset,
-	CmdHGet: hget,
+	CmdPing:    ping,
+	CmdEcho:    echo,
+	CmdSet:     set,
+	CmdGet:     get,
+	CmdHSet:    hset,
+	CmdHGet:    hget,
+	CmdHGetAll: hgetall,
 }
 
 // ==== Helpers =====
@@ -221,4 +223,31 @@ func hget(args []Value) Value {
 	}
 
 	return Value{typ: RespTypeBulk, bulk: value}
+}
+
+func hgetall(args []Value) Value {
+	if len(args) != 1 {
+		return argsCountErrVal(CmdHGetAll)
+	}
+
+	hash := args[0].bulk
+
+	HSETsMu.RLock()
+	fields, ok := HSETs[hash]
+	HSETsMu.RUnlock()
+
+	if !ok {
+		return Value{typ: RespTypeArray, array: []Value{}}
+	}
+
+	// Convert 'fields' map to alternating key/value array
+	result := make([]Value, 0, len(fields)*2)
+	for key, value := range fields {
+		result = append(result,
+			Value{typ: RespTypeBulk, bulk: key},
+			Value{typ: RespTypeBulk, bulk: value},
+		)
+	}
+
+	return Value{typ: RespTypeArray, array: result}
 }
