@@ -4,8 +4,12 @@ A Redis-like server implemented in Go.
 
 ## Guide
 
-- Follow-along: [Build Redis from scratch](https://www.build-redis-from-scratch.dev/)
-- Guidelines: [CodeCrafters - Build Your Own Redis](https://github.com/codecrafters-io/build-your-own-redis/tree/main/stage_descriptions)
+- Guidelines for self-implementation:
+
+  - https://app.codecrafters.io/courses/redis/overview
+  - https://github.com/codecrafters-io/build-your-own-redis/tree/main/stage_descriptions
+
+- Follow-along guide for a kickstart: https://www.build-redis-from-scratch.dev/
 
 ## Differences from real Redis
 
